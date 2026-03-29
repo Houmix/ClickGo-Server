@@ -24,7 +24,7 @@ jobs:
         run: npm install
 
       - name: Install Expo web dependencies
-        run: npx expo install react-dom react-native-web
+        run: npm install --legacy-peer-deps react-dom react-native-web
 
       - name: Build Expo web frontend
         run: npx expo export --platform web
