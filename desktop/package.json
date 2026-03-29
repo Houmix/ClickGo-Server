@@ -1,0 +1,56 @@
+{
+  "name": "clickgo-server-desktop",
+  "version": "1.0.0",
+  "productName": "ClickGo Server",
+  "description": "Desktop wrapper for ClickGo Server management interface",
+  "author": "ClickGo Interactive",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:web": "cd .. && npx expo export -p web",
+    "build": "npm run build:web && electron-builder"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "electron-updater": "^6.1.7"
+  },
+  "devDependencies": {
+    "electron": "^32.0.0",
+    "electron-builder": "^24.9.1"
+  },
+  "build": {
+    "appId": "com.clickgo.server",
+    "productName": "ClickGo Server",
+    "directories": {
+      "buildResources": "assets"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "ClickGo-Server-Setup.exe"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "Houmix",
+      "repo": "ClickGo-Server"
+    },
+    "extraResources": [
+      {
+        "from": "../dist",
+        "to": "app"
+      }
+    ]
+  }
+}

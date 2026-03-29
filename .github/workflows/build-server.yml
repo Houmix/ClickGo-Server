@@ -1,0 +1,49 @@
+name: Build ClickGo Server
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # ── Frontend (Expo web export) ──────────────────────────────────────
+      - name: Install Server frontend dependencies
+        run: npm install
+
+      - name: Build Expo web frontend
+        run: npx expo export --platform web
+        env:
+          EXPO_NO_TELEMETRY: '1'
+
+      # ── Electron desktop app ────────────────────────────────────────────
+      - name: Install Electron app dependencies
+        working-directory: desktop
+        run: npm install
+
+      - name: Build Electron installer (.exe)
+        working-directory: desktop
+        run: npx electron-builder --win --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── GitHub Release ──────────────────────────────────────────────────
+      - name: Create GitHub Release & upload exe
+        uses: softprops/action-gh-release@v2
+        with:
+          files: desktop/dist/ClickGo-Server-Setup.exe
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "ClickGo Service",
+    "slug": "clickgo-server",
+    "version": "1.0.0",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/YOUR_PROJECT_ID_SERVER",
+      "enabled": true,
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 3000
+    },
+    "orientation": "landscape",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#064e3b"
+    },
+    "android": {
+      "package": "com.clickgo.service"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    }
+  }
+}
