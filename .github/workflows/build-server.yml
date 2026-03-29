@@ -43,6 +43,8 @@ jobs:
       - name: Create GitHub Release & upload exe
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: ClickGo Server v1.0.${{ github.run_number }}
           files: desktop/dist/ClickGo-Server-Setup.exe
           generate_release_notes: true
         env:
