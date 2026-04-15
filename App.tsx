@@ -230,7 +230,7 @@ export default function App() {
 
       {/* Header */}
       <View style={s.header}>
-        <Text style={s.headerTitle}>Service — Distribution</Text>
+        <Text style={s.headerTitle}>Service — Distribution{appVersion ? `  v${appVersion}` : ''}</Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
           <View style={[s.countBadge, { backgroundColor: orders.length > 0 ? '#10b981' : '#64748b' }]}>
             <Text style={s.countText}>{orders.length} prête{orders.length !== 1 ? 's' : ''}</Text>
