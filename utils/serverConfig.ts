@@ -4,7 +4,7 @@ const SERVER_KEY     = 'server_screen_url';
 const RESTAURANT_KEY = 'server_screen_restaurant_id';
 const DISCOVER_PATH  = '/api/sync/discover/';
 const PORT           = 8000;
-const SCAN_TIMEOUT   = 1500;
+const SCAN_TIMEOUT   = 2500;
 
 let _url          = '';
 let _restaurantId = '';
@@ -36,8 +36,8 @@ export async function clearUrl() {
     await AsyncStorage.multiRemove([SERVER_KEY, RESTAURANT_KEY]);
 }
 
-export async function testIp(ip: string): Promise<{ url: string; restaurantId: string } | null> {
-    const url = `http://${ip}:${PORT}`;
+/** Teste si une URL complète (http://x.x.x.x:8000) répond comme un serveur caisse */
+export async function testUrl(url: string): Promise<{ url: string; restaurantId: string } | null> {
     try {
         const ctrl = new AbortController();
         const t = setTimeout(() => ctrl.abort(), SCAN_TIMEOUT);
@@ -53,10 +53,17 @@ export async function testIp(ip: string): Promise<{ url: string; restaurantId: s
     return null;
 }
 
+/** Teste une IP brute ou une URL complète */
+export async function testIp(ip: string): Promise<{ url: string; restaurantId: string } | null> {
+    // Si c'est déjà une URL complète, tester directement
+    if (ip.startsWith('http')) return testUrl(ip);
+    return testUrl(`http://${ip}:${PORT}`);
+}
+
 export async function scanNetwork(
     onProgress?: (scanned: number, total: number) => void
 ): Promise<{ url: string; restaurantId: string } | null> {
-    const subnets  = ['192.168.1', '192.168.0', '10.0.0', '10.0.1', '192.168.100'];
+    const subnets  = ['192.168.1', '192.168.0', '192.168.2', '10.0.0', '10.0.1', '192.168.100'];
     const priority = [1, 2, 100, 101, 50, 200, 254, 10, 20, 30, 40];
 
     const ips: string[] = ['127.0.0.1'];
