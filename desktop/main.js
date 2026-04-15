@@ -96,5 +96,53 @@ app.on('activate', () => {
     }
 });
 
-// Setup auto-updater
-autoUpdater.checkForUpdatesAndNotify();
+// ── Auto-updater ────────────────────────────────────────────────────────────
+function setupAutoUpdater() {
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true;
+
+    autoUpdater.on('checking-for-update', () => {
+        console.log('[Updater] Vérification des mises à jour…');
+    });
+
+    autoUpdater.on('update-available', (info) => {
+        console.log(`[Updater] Mise à jour disponible : v${info.version}`);
+    });
+
+    autoUpdater.on('update-not-available', () => {
+        console.log('[Updater] Aucune mise à jour disponible.');
+    });
+
+    autoUpdater.on('download-progress', (progress) => {
+        console.log(`[Updater] Téléchargement : ${Math.round(progress.percent)}%`);
+    });
+
+    autoUpdater.on('update-downloaded', (info) => {
+        const { dialog } = require('electron');
+        dialog.showMessageBox(mainWindow, {
+            type: 'info',
+            title: 'Mise à jour prête',
+            message: `La version ${info.version} a été téléchargée.`,
+            detail: 'L\'application va redémarrer pour appliquer la mise à jour.',
+            buttons: ['Redémarrer maintenant', 'Plus tard'],
+        }).then((result) => {
+            if (result.response === 0) {
+                autoUpdater.quitAndInstall();
+            }
+        });
+    });
+
+    autoUpdater.on('error', (error) => {
+        console.error('[Updater] Erreur :', error.message);
+    });
+
+    // Première vérification 15s après le démarrage
+    setTimeout(() => autoUpdater.checkForUpdatesAndNotify(), 15_000);
+    // Puis toutes les 2 heures
+    setInterval(() => autoUpdater.checkForUpdatesAndNotify(), 2 * 60 * 60 * 1000);
+}
+
+// Lancer l'auto-updater uniquement en production
+if (app.isPackaged) {
+    setupAutoUpdater();
+}
