@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const express = require('express');
@@ -9,6 +9,9 @@ let localServer = null;
 
 const PORT = 8768;
 const productName = 'ClickGo Server';
+
+// État global de la mise à jour
+const updateState = { status: 'idle', progress: 0, version: null, error: null };
 
 function startLocalServer(webBuildPath) {
     return new Promise((resolve, reject) => {
@@ -97,6 +100,38 @@ app.on('activate', () => {
     }
 });
 
+// ── Helpers pour envoyer au renderer ──
+function sendToRenderer(channel, ...args) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send(channel, ...args);
+    }
+}
+
+// ── IPC Handlers ──
+ipcMain.handle('updater-check', async () => {
+    try {
+        const result = await autoUpdater.checkForUpdates();
+        if (!result || !result.updateInfo) return { status: 'noRelease' };
+        return { status: 'ok', version: result.updateInfo.version };
+    } catch (err) {
+        const msg = err.message || '';
+        let userMsg = 'Impossible de vérifier les mises à jour';
+        if (msg.includes('404') || msg.includes('No published versions'))
+            userMsg = 'Aucune version publiée trouvée';
+        else if (msg.includes('401') || msg.includes('403'))
+            userMsg = 'Accès refusé — le dépôt est peut-être privé';
+        else if (msg.includes('ENOTFOUND') || msg.includes('network'))
+            userMsg = 'Pas de connexion internet';
+        updateState.status = 'error'; updateState.error = userMsg;
+        sendToRenderer('updater-error', userMsg);
+        return { status: 'error', message: userMsg };
+    }
+});
+
+ipcMain.handle('updater-install', () => { autoUpdater.quitAndInstall(); });
+ipcMain.handle('updater-status', () => ({ ...updateState }));
+ipcMain.handle('app-version', () => app.getVersion());
+
 // ── Auto-updater ────────────────────────────────────────────────────────────
 function setupAutoUpdater() {
     autoUpdater.autoDownload = true;
@@ -104,43 +139,43 @@ function setupAutoUpdater() {
 
     autoUpdater.on('checking-for-update', () => {
         console.log('[Updater] Vérification des mises à jour…');
+        updateState.status = 'checking';
     });
 
     autoUpdater.on('update-available', (info) => {
         console.log(`[Updater] Mise à jour disponible : v${info.version}`);
+        updateState.status = 'downloading'; updateState.version = info.version;
+        sendToRenderer('updater-available', info.version);
     });
 
     autoUpdater.on('update-not-available', () => {
         console.log('[Updater] Aucune mise à jour disponible.');
+        updateState.status = 'not-available';
+        sendToRenderer('updater-not-available');
     });
 
     autoUpdater.on('download-progress', (progress) => {
-        console.log(`[Updater] Téléchargement : ${Math.round(progress.percent)}%`);
+        const pct = Math.round(progress.percent);
+        console.log(`[Updater] Téléchargement : ${pct}%`);
+        updateState.status = 'downloading'; updateState.progress = pct;
+        sendToRenderer('updater-progress', pct);
     });
 
     autoUpdater.on('update-downloaded', (info) => {
-        const { dialog } = require('electron');
-        dialog.showMessageBox(mainWindow, {
-            type: 'info',
-            title: 'Mise à jour prête',
-            message: `La version ${info.version} a été téléchargée.`,
-            detail: 'L\'application va redémarrer pour appliquer la mise à jour.',
-            buttons: ['Redémarrer maintenant', 'Plus tard'],
-        }).then((result) => {
-            if (result.response === 0) {
-                autoUpdater.quitAndInstall();
-            }
-        });
+        console.log(`[Updater] Téléchargé : v${info.version}`);
+        updateState.status = 'downloaded'; updateState.version = info.version; updateState.progress = 100;
+        sendToRenderer('updater-downloaded', info.version);
     });
 
     autoUpdater.on('error', (error) => {
         console.error('[Updater] Erreur :', error.message);
+        updateState.status = 'error'; updateState.error = error.message;
+        sendToRenderer('updater-error', error.message);
     });
 
-    // Première vérification 15s après le démarrage
-    setTimeout(() => autoUpdater.checkForUpdatesAndNotify(), 15_000);
-    // Puis toutes les 2 heures
-    setInterval(() => autoUpdater.checkForUpdatesAndNotify(), 2 * 60 * 60 * 1000);
+    // Première vérification 15s après le démarrage, puis toutes les 2h
+    setTimeout(() => autoUpdater.checkForUpdates().catch(() => {}), 15_000);
+    setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), 2 * 60 * 60 * 1000);
 }
 
 // Lancer l'auto-updater uniquement en production

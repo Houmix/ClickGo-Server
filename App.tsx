@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, StatusBar,
-  TouchableOpacity, ActivityIndicator,
+  TouchableOpacity, ActivityIndicator, Animated,
 } from 'react-native';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { loadSavedUrl, saveUrl, clearUrl, scanNetwork, testIp, getPosUrl, getRestaurantId } from './utils/serverConfig';
@@ -46,6 +46,14 @@ export default function App() {
   const [clock,        setClock]        = useState(new Date());
   const [deliveringId, setDeliveringId] = useState<number | null>(null);
 
+  // ── État mise à jour logiciel ──
+  const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'downloading' | 'downloaded' | 'not-available' | 'error'>('idle');
+  const [updateProgress, setUpdateProgress] = useState(0);
+  const [updateVersion, setUpdateVersion] = useState<string | null>(null);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+  const [appVersion, setAppVersion] = useState('');
+  const updateProgressAnim = useRef(new Animated.Value(0)).current;
+
   const wsRef        = useRef<WebSocket | null>(null);
   const reconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollRef      = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -57,6 +65,41 @@ export default function App() {
   }, []);
 
   useEffect(() => { bootstrap(); return cleanup; }, []);
+
+  // ── Listeners mise à jour ──
+  useEffect(() => {
+    const api = (window as any).updaterAPI;
+    if (!api) return;
+    api.getVersion?.().then((v: string) => { if (v) setAppVersion(v); }).catch(() => {});
+    api.getStatus?.().then((s: any) => {
+      if (s?.status && s.status !== 'idle') { setUpdateStatus(s.status); setUpdateProgress(s.progress || 0); setUpdateVersion(s.version || null); }
+    }).catch(() => {});
+    api.onUpdateAvailable?.((version: string) => { setUpdateStatus('downloading'); setUpdateVersion(version); setUpdateProgress(0); setUpdateError(null); });
+    api.onUpdateProgress?.((pct: number) => {
+      setUpdateStatus('downloading'); setUpdateProgress(pct);
+      Animated.timing(updateProgressAnim, { toValue: pct, duration: 300, useNativeDriver: false }).start();
+    });
+    api.onUpdateDownloaded?.((version: string) => {
+      setUpdateStatus('downloaded'); setUpdateVersion(version); setUpdateProgress(100);
+      Animated.timing(updateProgressAnim, { toValue: 100, duration: 300, useNativeDriver: false }).start();
+    });
+    api.onUpdateNotAvailable?.(() => { setUpdateStatus('not-available'); setUpdateError(null); });
+    api.onUpdateError?.((msg: string) => { setUpdateStatus('error'); setUpdateError(msg || 'Erreur inconnue'); });
+  }, []);
+
+  const checkForUpdate = async () => {
+    const api = (window as any).updaterAPI;
+    if (!api) return;
+    setUpdateStatus('checking'); setUpdateProgress(0); setUpdateError(null);
+    updateProgressAnim.setValue(0);
+    try {
+      const result = await api.checkForUpdate();
+      if (result?.status === 'error') { setUpdateStatus('error'); setUpdateError(result.message); }
+      else if (result?.status === 'noRelease') { setUpdateStatus('not-available'); }
+    } catch { setUpdateStatus('error'); setUpdateError('Impossible de vérifier'); }
+  };
+
+  const installUpdate = () => { (window as any).updaterAPI?.installUpdate(); };
 
   const cleanup = () => {
     if (reconnectRef.current) clearTimeout(reconnectRef.current);
@@ -201,6 +244,9 @@ export default function App() {
           <TouchableOpacity onPress={() => { clearUrl(); bootstrap(); }} style={s.rescanBtn}>
             <Text style={s.rescanText}>Changer serveur</Text>
           </TouchableOpacity>
+          <TouchableOpacity onPress={checkForUpdate} style={s.rescanBtn} disabled={updateStatus === 'checking' || updateStatus === 'downloading'}>
+            <Text style={s.rescanText}>Mise à jour</Text>
+          </TouchableOpacity>
           <Text style={s.clock}>
             {clock.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
           </Text>
@@ -281,6 +327,43 @@ export default function App() {
           })}
         </ScrollView>
       )}
+
+      {/* ── Bandeau mise à jour ── */}
+      {updateStatus !== 'idle' && updateStatus !== 'not-available' && (
+        <View style={s.updateBanner}>
+          {updateStatus === 'checking' && (
+            <>
+              <ActivityIndicator size="small" color="#6ee7b7" />
+              <Text style={s.updateText}>Vérification des mises à jour…</Text>
+            </>
+          )}
+          {updateStatus === 'downloading' && (
+            <>
+              <View style={s.updateProgressTrack}>
+                <Animated.View style={[s.updateProgressFill, { width: updateProgressAnim.interpolate({ inputRange: [0, 100], outputRange: ['0%', '100%'] }) }]} />
+              </View>
+              <Text style={s.updateText}>Téléchargement{updateVersion ? ` v${updateVersion}` : ''} — {updateProgress}%</Text>
+            </>
+          )}
+          {updateStatus === 'downloaded' && (
+            <>
+              <Text style={s.updateText}>v{updateVersion} prête !</Text>
+              <TouchableOpacity style={s.updateInstallBtn} onPress={installUpdate}>
+                <Text style={s.updateInstallText}>Installer et redémarrer</Text>
+              </TouchableOpacity>
+            </>
+          )}
+          {updateStatus === 'error' && (
+            <>
+              <Text style={[s.updateText, { color: '#fca5a5' }]}>{updateError || 'Erreur'}</Text>
+              <TouchableOpacity style={s.updateRetryBtn} onPress={checkForUpdate}>
+                <Text style={s.updateRetryText}>Réessayer</Text>
+              </TouchableOpacity>
+            </>
+          )}
+          {appVersion ? <Text style={s.updateVersionLabel}>v{appVersion}</Text> : null}
+        </View>
+      )}
     </View>
   );
 }
@@ -335,4 +418,15 @@ const s = StyleSheet.create({
   deliverBtn:     { backgroundColor: '#10b981', borderRadius: 14, paddingVertical: 16, alignItems: 'center', justifyContent: 'center' },
   deliverBtnDisabled: { backgroundColor: '#94a3b8' },
   deliverBtnText: { color: 'white', fontWeight: '800', fontSize: 18 },
+
+  // Update banner
+  updateBanner:        { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#064e3b', paddingHorizontal: 16, paddingVertical: 10, borderTopWidth: 1, borderTopColor: '#065f46' },
+  updateText:          { color: 'rgba(255,255,255,0.85)', fontSize: 13, fontWeight: '600' },
+  updateProgressTrack: { width: 120, height: 6, backgroundColor: '#065f46', borderRadius: 3, overflow: 'hidden' },
+  updateProgressFill:  { height: '100%' as any, backgroundColor: '#10b981', borderRadius: 3 },
+  updateInstallBtn:    { backgroundColor: '#10b981', paddingHorizontal: 14, paddingVertical: 6, borderRadius: 8 },
+  updateInstallText:   { color: 'white', fontWeight: '700', fontSize: 12 },
+  updateRetryBtn:      { backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 14, paddingVertical: 6, borderRadius: 8 },
+  updateRetryText:     { color: 'white', fontWeight: '600', fontSize: 12 },
+  updateVersionLabel:  { color: 'rgba(255,255,255,0.4)', fontSize: 11, marginLeft: 'auto' as any },
 });
